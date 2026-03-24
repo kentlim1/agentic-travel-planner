@@ -1,0 +1,18 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# User data
+preferences.json
+
+# ChromaDB vector store
+travel_db/
+
+# OS
+.DS_Store
