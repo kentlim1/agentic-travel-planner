@@ -103,14 +103,16 @@ What gets remembered:
 
 ```
 travel-agent/
-├── graph.py          # LangGraph workflow definition and CLI entry point
-├── nodes.py          # All node functions and Pydantic models
-├── state.py          # TravelState TypedDict schema
-├── memory.py         # load_preferences / save_preferences helpers
-├── retriever.py      # ChromaDB client and query_knowledge_base helper
-├── ingest.py         # One-time script to populate the vector store
+├── src/
+│   ├── graph.py      # LangGraph workflow definition and CLI entry point
+│   ├── nodes.py      # All node functions and Pydantic models
+│   ├── state.py      # TravelState TypedDict schema
+│   ├── memory.py     # load_preferences / save_preferences helpers
+│   ├── retriever.py  # ChromaDB client and query_knowledge_base helper
+│   └── ingest.py     # One-time script to populate the vector store
 ├── travel_db/        # Persistent ChromaDB storage (auto-created by ingest.py)
-└── preferences.json  # Persisted user preferences (auto-created)
+├── preferences.json  # Persisted user preferences (auto-created)
+└── .env              # API keys (not committed)
 ```
 
 ## Setup
@@ -124,7 +126,7 @@ travel-agent/
 **Install dependencies**
 
 ```bash
-pip install langgraph langchain-ollama langchain-core langchain-huggingface pydantic requests chromadb sentence-transformers
+pip install -r requirements.txt
 ```
 
 **Add your OpenWeatherMap API key**
