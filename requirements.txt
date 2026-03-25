@@ -1,0 +1,17 @@
+# --- Core AI Orchestration ---
+langgraph==0.6.11
+langchain-core==0.3.83
+langchain-ollama==0.3.10
+langchain-huggingface==0.1.2
+
+# --- Vector Database & Embeddings ---
+chromadb==1.5.5
+sentence-transformers==3.0.1
+
+# --- Data Validation & Environment ---
+pydantic==2.12.5
+python-dotenv==1.2.1
+requests==2.32.5
+
+# --- LLM Client ---
+ollama==0.6.1
