@@ -102,51 +102,105 @@ What gets remembered:
 ## Project Structure
 
 ```
-travel-agent/
-├── src/
-│   ├── graph.py      # LangGraph workflow definition and CLI entry point
-│   ├── nodes.py      # All node functions and Pydantic models
-│   ├── state.py      # TravelState TypedDict schema
-│   ├── memory.py     # load_preferences / save_preferences helpers
-│   ├── retriever.py  # ChromaDB client and query_knowledge_base helper
-│   └── ingest.py     # One-time script to populate the vector store
-├── travel_db/        # Persistent ChromaDB storage (auto-created by ingest.py)
-├── preferences.json  # Persisted user preferences (auto-created)
-└── .env              # API keys (not committed)
+agentic-travel-planner/
+├── src/                    # LangGraph agent (used by both CLI and API)
+│   ├── graph.py            # Workflow definition + CLI entry point
+│   ├── nodes.py            # Node functions and Pydantic models
+│   ├── state.py            # TravelState TypedDict schema
+│   ├── memory.py           # load_preferences / save_preferences helpers
+│   ├── retriever.py        # ChromaDB client and query_knowledge_base helper
+│   └── ingest.py           # One-time script to populate the vector store
+├── backend/
+│   └── main.py             # FastAPI server wrapping the graph (streaming NDJSON)
+├── frontend/               # Next.js 14 (App Router, TypeScript) chat UI
+│   ├── app/
+│   │   ├── layout.tsx
+│   │   ├── page.tsx        # Three-panel layout: memory sidebar, chat, live proposal
+│   │   └── globals.css
+│   └── package.json
+├── travel_db/              # Persistent ChromaDB storage (auto-created by ingest.py)
+├── preferences.json        # Persisted user preferences (auto-created)
+└── .env                    # API keys (not committed)
 ```
+
+---
 
 ## Setup
 
 **Requirements**
 
 - Python 3.10+
+- Node.js 18+ (for the web UI)
 - [Ollama](https://ollama.com) running locally with `llama3.1` pulled
 - An [OpenWeatherMap](https://openweathermap.org/api) API key
 
-**Install dependencies**
+**1. Install Python dependencies**
 
 ```bash
 pip install -r requirements.txt
 ```
 
-**Add your OpenWeatherMap API key**
+**2. Configure your OpenWeatherMap API key**
 
-In `nodes.py`, replace the placeholder in `check_environment`:
+Create `.env` in the project root:
 
-```python
-api_key = "YOUR_OPENWEATHER_API_KEY"
+```
+OPENWEATHER_API_KEY=your_key_here
 ```
 
-**Populate the knowledge base** (once, before first run)
+**3. Populate the knowledge base** (once, before first run)
 
 ```bash
-python ingest.py
+python src/ingest.py
 ```
 
-**Run**
+**4. Install frontend dependencies**
 
 ```bash
-python graph.py
+cd frontend
+cp .env.local.example .env.local
+npm install
+cd ..
+```
+
+---
+
+## Running
+
+The app is split into three pieces that each run in their own terminal.
+
+**Terminal 1 — Ollama** (skip if you already have `ollama serve` running as a service)
+
+```bash
+ollama serve
+```
+
+**Terminal 2 — FastAPI backend** (from the project root)
+
+```bash
+python -m uvicorn backend.main:app --reload --port 8000
+```
+
+Endpoints:
+- `POST /api/chat` — streams LangGraph stage updates as NDJSON, ending with the final proposal
+- `GET  /api/memory` — returns `preferences.json`
+- `POST /api/memory/clear` — deletes `preferences.json`
+
+**Terminal 3 — Next.js frontend**
+
+```bash
+cd frontend
+npm run dev
+```
+
+Open http://localhost:3000.
+
+### CLI mode (still supported)
+
+The original CLI is unchanged:
+
+```bash
+python src/graph.py
 ```
 
 ---
