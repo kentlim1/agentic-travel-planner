@@ -1,7 +1,6 @@
 # --- Core AI Orchestration ---
 langgraph==0.6.11
 langchain-core==0.3.83
-langchain-ollama==0.3.10
 langchain-huggingface==0.1.2
 
 # --- Vector Database & Embeddings ---
@@ -14,7 +13,8 @@ python-dotenv==1.2.1
 requests==2.32.5
 
 # --- LLM Client ---
-ollama==0.6.1
+langchain-aws==0.2.35
+boto3==1.42.93
 
 # --- API Server ---
 fastapi==0.115.0
