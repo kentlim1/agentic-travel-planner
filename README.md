@@ -1,6 +1,6 @@
 # Agentic Travel Planner
 
-A conversational AI travel planner built with LangGraph and a local Ollama LLM. The agent uses a self-correcting graph to recommend activities and accommodations, retrieves curated local tips from a vector database, validates recommendations against live weather data and budget constraints, and remembers your preferences between sessions.
+A conversational AI travel planner built with LangGraph and Claude Haiku 4.5 via AWS Bedrock. The agent uses a self-correcting graph to recommend activities and accommodations, retrieves curated local tips from a vector database, validates recommendations against live weather data and budget constraints, remembers your preferences between sessions using DynamoDB, and archives every completed trip plan to S3.
 
 ---
 
@@ -24,12 +24,12 @@ START → memory_loader → extractor → drafter → checker → validator
 
 | Node | File | Responsibility |
 |---|---|---|
-| `memory_loader` | `nodes.py` | Loads `preferences.json` into state. Restores the last known destination, budget, and dates for returning users. |
+| `memory_loader` | `nodes.py` | Loads user preferences from DynamoDB into state. Restores the last known destination, budget, and dates for returning users. |
 | `extractor` | `nodes.py` | Uses a structured LLM call to parse the user's message into `destination`, `max_budget`, and `dates`. Detects topic switches (e.g. London → Tokyo) and resets stale constraints automatically. |
 | `drafter` | `nodes.py` | Queries ChromaDB for the top 3 semantically relevant local tips, then calls the LLM with that context injected alongside the user's past activities, preferences, and previous recommendation. |
 | `checker` | `nodes.py` | Calls the OpenWeatherMap API for live weather. Uses a second LLM call to estimate a realistic cost for the recommendation. |
 | `validator` | `nodes.py` | Compares estimated cost against `max_budget` and checks whether an outdoor recommendation clashes with bad weather. Appends errors to `validation_errors`. |
-| `memory_saver` | `nodes.py` | Persists the destination, recommendation, and constraints back to `preferences.json` for future sessions. |
+| `memory_saver` | `nodes.py` | Persists the destination, recommendation, and constraints back to DynamoDB for future sessions. Also archives the completed itinerary to S3. |
 
 ### Self-Correction Loop
 
@@ -74,7 +74,7 @@ Then re-run `python ingest.py` to rebuild the collection.
 
 ## Persistent Memory
 
-Preferences are stored in `preferences.json` and survive between Python sessions.
+Preferences are stored in DynamoDB (`travel-agent-preferences` table) and persist across sessions and server restarts.
 
 ```json
 {
@@ -99,6 +99,23 @@ What gets remembered:
 
 ---
 
+## Itinerary History (S3)
+
+Every successfully completed trip plan is automatically archived to S3 at:
+
+```
+s3://travel-agent-itineraries/itineraries/{destination}/{timestamp}.json
+```
+
+Each file contains the destination, dates, budget, weather, estimated cost, and the full itinerary recommendation.
+
+Two API endpoints expose this history:
+
+- `GET /api/itineraries` — list all saved itineraries, newest first. Filter by destination with `?destination=tokyo`.
+- `GET /api/itineraries/{key}` — fetch the full JSON for a specific itinerary by its S3 key.
+
+---
+
 ## Project Structure
 
 ```
@@ -107,7 +124,8 @@ agentic-travel-planner/
 │   ├── graph.py            # Workflow definition + CLI entry point
 │   ├── nodes.py            # Node functions and Pydantic models
 │   ├── state.py            # TravelState TypedDict schema
-│   ├── memory.py           # load_preferences / save_preferences helpers
+│   ├── memory.py           # DynamoDB preference helpers
+│   ├── storage.py          # S3 itinerary archive helpers
 │   ├── retriever.py        # ChromaDB client and query_knowledge_base helper
 │   └── ingest.py           # One-time script to populate the vector store
 ├── backend/
@@ -119,7 +137,6 @@ agentic-travel-planner/
 │   │   └── globals.css
 │   └── package.json
 ├── travel_db/              # Persistent ChromaDB storage (auto-created by ingest.py)
-├── preferences.json        # Persisted user preferences (auto-created)
 └── .env                    # API keys (not committed)
 ```
 
@@ -131,34 +148,47 @@ agentic-travel-planner/
 
 - Python 3.10+
 - Node.js 18+ (for the web UI)
-- [Ollama](https://ollama.com) running locally with `llama3.1` pulled
+- An AWS account with:
+  - IAM credentials (access key + secret)
+  - Amazon Bedrock access granted for Claude Haiku 4.5
+  - A DynamoDB table named `travel-agent-preferences` (partition key: `user_id`, type: String)
+  - An S3 bucket named `travel-agent-itineraries`
 - An [OpenWeatherMap](https://openweathermap.org/api) API key
 
-**1. Install Python dependencies**
+**1. Create a Python virtual environment and install dependencies**
 
 ```bash
+python3.12 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-**2. Configure your OpenWeatherMap API key**
+**2. Configure environment variables**
 
 Create `.env` in the project root:
 
 ```
 OPENWEATHER_API_KEY=your_key_here
+
+# AWS Bedrock
+AWS_ACCESS_KEY_ID=your_access_key_id
+AWS_SECRET_ACCESS_KEY=your_secret_access_key
+AWS_REGION=us-east-1
+BEDROCK_MODEL_ID=us.anthropic.claude-haiku-4-5-20251001-v1:0
+DYNAMODB_TABLE=travel-agent-preferences
+S3_BUCKET=travel-agent-itineraries
 ```
 
 **3. Populate the knowledge base** (once, before first run)
 
 ```bash
-python src/ingest.py
+venv/bin/python src/ingest.py
 ```
 
 **4. Install frontend dependencies**
 
 ```bash
 cd frontend
-cp .env.local.example .env.local
 npm install
 cd ..
 ```
@@ -167,26 +197,20 @@ cd ..
 
 ## Running
 
-The app is split into three pieces that each run in their own terminal.
-
-**Terminal 1 — Ollama** (skip if you already have `ollama serve` running as a service)
+**Terminal 1 — FastAPI backend** (from the project root)
 
 ```bash
-ollama serve
-```
-
-**Terminal 2 — FastAPI backend** (from the project root)
-
-```bash
-python -m uvicorn backend.main:app --reload --port 8000
+venv/bin/python -m uvicorn backend.main:app --port 8000
 ```
 
 Endpoints:
 - `POST /api/chat` — streams LangGraph stage updates as NDJSON, ending with the final proposal
-- `GET  /api/memory` — returns `preferences.json`
-- `POST /api/memory/clear` — deletes `preferences.json`
+- `GET  /api/memory` — returns current user preferences from DynamoDB
+- `POST /api/memory/clear` — deletes the user's preferences from DynamoDB
+- `GET  /api/itineraries` — lists all archived itineraries from S3 (supports `?destination=` filter)
+- `GET  /api/itineraries/{key}` — fetches a specific itinerary by its S3 key
 
-**Terminal 3 — Next.js frontend**
+**Terminal 2 — Next.js frontend**
 
 ```bash
 cd frontend
@@ -197,10 +221,8 @@ Open http://localhost:3000.
 
 ### CLI mode (still supported)
 
-The original CLI is unchanged:
-
 ```bash
-python src/graph.py
+venv/bin/python src/graph.py
 ```
 
 ---
