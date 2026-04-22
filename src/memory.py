@@ -1,22 +1,73 @@
-import json
 import os
+from decimal import Decimal
 
-MEMORY_FILE = os.path.join(os.path.dirname(__file__), "..", "preferences.json")
+import boto3
+from botocore.exceptions import ClientError
+from dotenv import load_dotenv
+
+load_dotenv()
+
+USER_ID = "default"
 
 DEFAULT_PREFERENCES = {
     "past_destinations": [],
     "avoided_activity_types": [],
     "preferred_activity_types": [],
     "past_activities": [],
-    "notes": []
+    "notes": [],
 }
 
+
+def _get_table():
+    dynamodb = boto3.resource("dynamodb", region_name=os.getenv("AWS_REGION", "us-east-1"))
+    return dynamodb.Table(os.getenv("DYNAMODB_TABLE", "travel-agent-preferences"))
+
+
+def _to_dynamodb(obj):
+    if isinstance(obj, float):
+        return Decimal(str(obj))
+    if isinstance(obj, dict):
+        return {k: _to_dynamodb(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_to_dynamodb(v) for v in obj]
+    return obj
+
+
+def _from_dynamodb(obj):
+    if isinstance(obj, Decimal):
+        return float(obj)
+    if isinstance(obj, dict):
+        return {k: _from_dynamodb(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_from_dynamodb(v) for v in obj]
+    return obj
+
+
 def load_preferences() -> dict:
-    if not os.path.exists(MEMORY_FILE):
+    try:
+        table = _get_table()
+        response = table.get_item(Key={"user_id": USER_ID})
+        item = response.get("Item")
+        if not item:
+            return DEFAULT_PREFERENCES.copy()
+        item.pop("user_id", None)
+        return {**DEFAULT_PREFERENCES.copy(), **_from_dynamodb(item)}
+    except ClientError as e:
+        print(f"[DynamoDB] Error loading preferences: {e}")
         return DEFAULT_PREFERENCES.copy()
-    with open(MEMORY_FILE, "r") as f:
-        return json.load(f)
+
 
 def save_preferences(preferences: dict) -> None:
-    with open(MEMORY_FILE, "w") as f:
-        json.dump(preferences, f, indent=2)
+    try:
+        table = _get_table()
+        table.put_item(Item={"user_id": USER_ID, **_to_dynamodb(preferences)})
+    except ClientError as e:
+        print(f"[DynamoDB] Error saving preferences: {e}")
+
+
+def clear_preferences() -> None:
+    try:
+        table = _get_table()
+        table.delete_item(Key={"user_id": USER_ID})
+    except ClientError as e:
+        print(f"[DynamoDB] Error clearing preferences: {e}")

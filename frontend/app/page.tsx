@@ -181,7 +181,7 @@ export default function Page() {
       if (p) setProposal(JSON.parse(p));
     } catch {}
 
-    // Memory lives on the backend (preferences.json); fetch once
+    // Memory lives on the backend (DynamoDB); fetch once
     fetch(`${API_URL}/api/memory`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -430,7 +430,7 @@ export default function Page() {
               Travel Planner
             </div>
             <div style={{ fontSize: 11, color: "oklch(0.55 0.03 50)" }}>
-              Powered by LangGraph · Ollama llama3.1
+              Powered by LangGraph · AWS Bedrock
             </div>
           </div>
           {tripDest && (
@@ -721,9 +721,9 @@ function Sidebar({ memory, tripDest, tripBudget, tripEmoji, onClear, compact }: 
         <Section label="Agent Architecture">
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {[
-              { label: "LLM", val: "llama3.1 (Ollama)" },
+              { label: "LLM", val: "Claude Haiku 4.5" },
               { label: "Graph", val: "LangGraph" },
-              { label: "Memory", val: "preferences.json" },
+              { label: "Memory", val: "DynamoDB" },
               { label: "RAG", val: "ChromaDB" },
               { label: "Weather", val: "OpenWeatherMap" },
             ].map(({ label, val }) => (

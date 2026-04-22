@@ -2,11 +2,12 @@ import requests
 import os
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
-from langchain_ollama import ChatOllama
+from langchain_aws import ChatBedrock
 from langchain_core.prompts import ChatPromptTemplate
 from state import TravelState
 from retriever import query_knowledge_base
 from memory import load_preferences, save_preferences
+from storage import save_itinerary
 
 load_dotenv()
 
@@ -23,7 +24,11 @@ class TravelConstraints(BaseModel):
     max_budget: float = Field(description="The dollar amount the user states as their budget or price limit. Extract the number as-is — do NOT multiply by nights, days, or any duration. Phrases like 'less than $500', 'under $500', 'no more than $500', 'costs less than $500' all mean max_budget=500.0. If no price is mentioned, return 0.")
     dates: str = Field(description="The duration or specific dates of the trip")
 
-llm = ChatOllama(model="llama3.1", temperature=0.7)
+llm = ChatBedrock(
+    model_id=os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20241022-v2:0"),
+    region_name=os.getenv("AWS_REGION", "us-east-1"),
+    model_kwargs={"temperature": 0.7},
+)
 structured_llm = llm.with_structured_output(ItineraryDraft)
 
 def load_memory(state: TravelState):
@@ -70,6 +75,7 @@ def save_memory(state: TravelState):
 
     save_preferences(preferences)
     print(f"[Memory] Preferences saved for future runs.")
+    save_itinerary(state)
     return {"user_preferences": preferences}
 
 

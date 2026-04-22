@@ -3,7 +3,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,7 +14,8 @@ SRC_DIR = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(SRC_DIR))
 
 from graph import travel_agent  # noqa: E402
-from memory import MEMORY_FILE, load_preferences  # noqa: E402
+from memory import load_preferences, clear_preferences  # noqa: E402
+from storage import list_itineraries, get_itinerary  # noqa: E402
 
 app = FastAPI(title="Agentic Travel Planner API")
 
@@ -27,9 +28,9 @@ app.add_middleware(
 
 
 class TripCarry(BaseModel):
-    destination: str | None = None
+    destination: Optional[str] = None
     max_budget: float = 0.0
-    dates: str | None = None
+    dates: Optional[str] = None
     current_itinerary: dict = {}
 
 
@@ -152,9 +153,22 @@ def get_memory():
 
 @app.post("/api/memory/clear")
 def clear_memory():
-    if os.path.exists(MEMORY_FILE):
-        os.remove(MEMORY_FILE)
+    clear_preferences()
     return {"ok": True}
+
+
+@app.get("/api/itineraries")
+def get_itineraries(destination: str | None = None):
+    return list_itineraries(destination)
+
+
+@app.get("/api/itineraries/{key:path}")
+def fetch_itinerary(key: str):
+    record = get_itinerary(key)
+    if not record:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Itinerary not found")
+    return record
 
 
 @app.get("/api/health")
