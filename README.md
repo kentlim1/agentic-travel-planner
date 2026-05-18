@@ -4,22 +4,6 @@ A conversational AI travel planner built with LangGraph and Claude Haiku 4.5 via
 
 ---
 
-## Architecture
-
-The agent is a directed graph with a built-in self-correction loop:
-
-```
-START → memory_loader → extractor → drafter → checker → validator
-                                                              │
-                                          ┌───── re_draft ←──┘
-                                          │
-                                       drafter
-                                          │
-                                       checker
-                                          │
-                                       validator ──── finish ───→ memory_saver → END
-```
-
 ### Nodes
 
 | Node | File | Responsibility |
