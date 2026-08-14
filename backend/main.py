@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -18,9 +19,13 @@ from storage import list_itineraries, get_itinerary  # noqa: E402
 
 app = FastAPI(title="Agentic Travel Planner API")
 
+_allow_origins = ["http://localhost:3000"]
+if os.getenv("FRONTEND_URL"):
+    _allow_origins.append(os.getenv("FRONTEND_URL"))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_allow_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
