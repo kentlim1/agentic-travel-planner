@@ -83,7 +83,7 @@ if __name__ == "__main__":
             
             itinerary = final_state.get("current_itinerary", {})
             
-            print(f"\n--- FINAL PROPOSAL ---")
+            print("\n--- FINAL PROPOSAL ---")
             print(f"Destination: {final_state.get('destination')}")
             print(f"Recommendation: {itinerary.get('recommendation')}")
             print(f"Reasoning: {itinerary.get('reasoning')}")

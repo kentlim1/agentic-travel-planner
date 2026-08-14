@@ -59,7 +59,6 @@ def save_memory(state: TravelState):
     destination = state.get("destination")
     itinerary = state.get("current_itinerary", {})
     activity = itinerary.get("recommendation")
-    location_type = itinerary.get("location_type")
 
     if destination and destination not in preferences.get("past_destinations", []):
         preferences.setdefault("past_destinations", []).append(destination)
@@ -74,7 +73,7 @@ def save_memory(state: TravelState):
     }
 
     save_preferences(preferences)
-    print(f"[Memory] Preferences saved for future runs.")
+    print("[Memory] Preferences saved for future runs.")
     save_itinerary(state)
     return {"user_preferences": preferences}
 
