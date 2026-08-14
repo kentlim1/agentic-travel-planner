@@ -6,9 +6,9 @@ from pathlib import Path
 SRC_DIR = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(SRC_DIR))
 
-# `nodes.py` imports `retriever`, which constructs a HuggingFaceEmbeddings
-# model at import time (downloads weights from HF Hub). Stub it out so the
-# test suite stays hermetic and fast.
+# `nodes.py` imports `retriever`, which constructs a BedrockEmbeddings
+# client at import time (calls AWS). Stub it out so the test suite stays
+# hermetic and fast.
 if "retriever" not in sys.modules:
     fake_retriever = types.ModuleType("retriever")
     fake_retriever.query_knowledge_base = lambda *args, **kwargs: []

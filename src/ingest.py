@@ -1,14 +1,20 @@
 import os
 import chromadb
-from langchain_huggingface import HuggingFaceEmbeddings
+from dotenv import load_dotenv
+from langchain_aws import BedrockEmbeddings
+
+load_dotenv()
 
 # 1. Initialize the local ChromaDB client
 _DB_PATH = os.path.join(os.path.dirname(__file__), "..", "travel_db")
 client = chromadb.PersistentClient(path=_DB_PATH)
 collection = client.get_or_create_collection(name="niche_travel_tips")
 
-# 2. Define the Embedding Model (Runs locally on your CPU)
-embed_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+# 2. Define the Embedding Model (calls Bedrock; must match retriever.py's model)
+embed_model = BedrockEmbeddings(
+    model_id=os.getenv("TITAN_EMBED_MODEL_ID", "amazon.titan-embed-text-v2:0"),
+    region_name=os.getenv("AWS_REGION", "us-east-1"),
+)
 
 # 3. Add some "proprietary" knowledge 
 # In a real project, you'd scrape blogs or use PDFs here

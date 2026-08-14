@@ -1,11 +1,17 @@
 import os
 import chromadb
-from langchain_huggingface import HuggingFaceEmbeddings
+from dotenv import load_dotenv
+from langchain_aws import BedrockEmbeddings
+
+load_dotenv()
 
 _DB_PATH = os.path.join(os.path.dirname(__file__), "..", "travel_db")
 _client = chromadb.PersistentClient(path=_DB_PATH)
 _collection = _client.get_or_create_collection(name="niche_travel_tips")
-_embed_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+_embed_model = BedrockEmbeddings(
+    model_id=os.getenv("TITAN_EMBED_MODEL_ID", "amazon.titan-embed-text-v2:0"),
+    region_name=os.getenv("AWS_REGION", "us-east-1"),
+)
 
 
 def query_knowledge_base(query: str, n_results: int = 3) -> list[dict]:
