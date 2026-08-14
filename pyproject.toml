@@ -1,0 +1,10 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["venv", "travel_db"]
+
+[tool.ruff.lint]
+# Correctness-only: undefined names, unused imports/vars, syntax errors.
+# Deliberately not enforcing style (line-length, import order) to avoid
+# churn on the existing long LLM prompt strings.
+select = ["E9", "F"]

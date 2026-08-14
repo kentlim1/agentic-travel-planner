@@ -7,6 +7,8 @@ __pycache__/
 *.pyo
 .venv/
 venv/
+.pytest_cache/
+.ruff_cache/
 
 # User data
 preferences.json
@@ -15,4 +17,5 @@ preferences.json
 travel_db/
 
 # OS
-.DS_Store
+.DS_Store.env
+.mcp.json

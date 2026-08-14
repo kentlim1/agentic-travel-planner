@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same branch/PR so CI doesn't queue behind itself.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Fake AWS credentials: nothing in this repo's test suite should ever reach
+  # real AWS. Bedrock/S3/DynamoDB calls are mocked at the test level (see
+  # tests/conftest.py); these env vars are a second line of defense so any
+  # accidentally-unmocked call fails on auth instead of touching a real account.
+  AWS_ACCESS_KEY_ID: testing
+  AWS_SECRET_ACCESS_KEY: testing
+  AWS_SESSION_TOKEN: testing
+  AWS_DEFAULT_REGION: us-east-1
+  AWS_REGION: us-east-1
+
+jobs:
+  lint-and-test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      # Fails fast: correctness-only rule set (undefined names, unused
+      # imports/vars, syntax errors). See pyproject.toml for the full config.
+      - name: Lint (ruff)
+        run: ruff check src backend tests
+
+      - name: Test (pytest)
+        run: pytest tests/ -v
