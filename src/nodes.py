@@ -1,7 +1,8 @@
 import requests
 import os
+from typing import Literal
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, create_model
 from langchain_aws import ChatBedrock
 from langchain_core.prompts import ChatPromptTemplate
 from state import TravelState
@@ -11,10 +12,56 @@ from storage import save_itinerary
 
 load_dotenv()
 
-class ItineraryDraft(BaseModel):
-    recommendation: str = Field(description="The specific name of what is being recommended. If the user asked for a hotel, this MUST be a hotel name. If they asked for an activity, this is the activity or venue name.")
-    location_type: str = Field(description="Must be strictly 'indoor' or 'outdoor'")
-    reasoning: str = Field(description="A short sentence explaining why this fits the user's budget and constraints")
+FOLLOWUP_CUES = ("another", "different", "else", "what about", "how about", "instead", "also")
+
+
+def build_draft_schema(hit_names: list[str]):
+    """
+    Build the ItineraryDraft schema dynamically so 'matches_local_knowledge' is a
+    Literal of the exact venue names returned by this RAG query (plus 'none'). This
+    makes grounding code-enforced: when the model claims a KB match, the value it
+    returns is guaranteed to be one of the real venue names, not free text it can drift
+    away from. (A free-text 'you MUST use the exact name' instruction alone wasn't
+    enough — the model kept inventing venues not in the knowledge base.)
+
+    'cuisine_category_check' is deliberately the FIRST field. With it absent (or
+    placed after 'matches_local_knowledge'), the model commits to a venue before
+    reasoning about whether it actually fits — e.g. it would pick a Filipino
+    restaurant for a "Japanese restaurant" request because it looked geographically
+    close, ignoring its own cuisine description. Forcing the category check to be
+    written out first fixed that in repeated testing (5/5 vs 0/5 correct).
+    """
+    options = tuple(dict.fromkeys(hit_names)) + ("none",)
+    return create_model(
+        "ItineraryDraft",
+        cuisine_category_check=(
+            str,
+            Field(description=(
+                "First, name the specific cuisine/category/type of place the user is asking for. "
+                "Then, for EACH venue listed in LOCAL KNOWLEDGE, state in a few words whether its "
+                "actual cuisine/category (per its own description, not its name or location) matches."
+            )),
+        ),
+        matches_local_knowledge=(
+            Literal[options],
+            Field(description=(
+                "Based only on the cuisine_category_check above, the exact LOCAL KNOWLEDGE venue name "
+                "that is geographically and thematically relevant to this request, or 'none' if no "
+                "listed snippet genuinely fits (wrong city, wrong cuisine/category, etc.)."
+            )),
+        ),
+        recommendation=(
+            str,
+            Field(description=(
+                "The specific name of what is being recommended. Only used when "
+                "'matches_local_knowledge' is 'none' — otherwise it is ignored. If the user "
+                "asked for a hotel, this MUST be a hotel name. If they asked for an activity, "
+                "this is the activity or venue name."
+            )),
+        ),
+        location_type=(str, Field(description="Must be strictly 'indoor' or 'outdoor'")),
+        reasoning=(str, Field(description="A short sentence explaining why this fits the user's budget and constraints")),
+    )
 
 class CostEstimate(BaseModel):
     estimated_cost: float = Field(description="Realistic total cost in USD for one person to do this activity, including entry fees, transport, and incidentals")
@@ -29,7 +76,6 @@ llm = ChatBedrock(
     region_name=os.getenv("AWS_REGION", "us-east-1"),
     model_kwargs={"temperature": 0.7},
 )
-structured_llm = llm.with_structured_output(ItineraryDraft)
 
 def load_memory(state: TravelState):
     preferences = load_preferences()
@@ -50,6 +96,8 @@ def load_memory(state: TravelState):
         result["max_budget"] = last["max_budget"]
     if last.get("dates") and state.get("dates") in (None, "Not set"):
         result["dates"] = last["dates"]
+    if last.get("last_request") and not state.get("last_request"):
+        result["last_request"] = last["last_request"]
 
     return result
 
@@ -66,16 +114,20 @@ def save_memory(state: TravelState):
     if activity and activity not in preferences.get("past_activities", []):
         preferences.setdefault("past_activities", []).append(activity)
 
+    messages = state.get("messages") or []
+    last_request = messages[-1].content if messages else state.get("last_request", "")
+
     preferences["last_constraints"] = {
         "destination": state.get("destination"),
         "max_budget": state.get("max_budget"),
         "dates": state.get("dates"),
+        "last_request": last_request,
     }
 
     save_preferences(preferences)
     print("[Memory] Preferences saved for future runs.")
     save_itinerary(state)
-    return {"user_preferences": preferences}
+    return {"user_preferences": preferences, "last_request": last_request}
 
 
 def extract_constraints(state: TravelState):
@@ -141,21 +193,33 @@ def draft_itinerary(state: TravelState):
         "RULE 1 — HIGHEST PRIORITY: Always fulfill the user's explicit request first. "
         "If they ask for a hotel, recommend a specific hotel by name. No exceptions. "
         "If they ask for an activity, recommend a specific activity or venue. "
-        "RULE 2: If LOCAL KNOWLEDGE snippets are provided and at least one is geographically and "
-        "thematically relevant to the request, you MUST set 'recommendation' to the exact venue name "
-        "from one of those snippets — do NOT invent a different venue when a relevant one is given. "
-        "You may still phrase 'reasoning' in your own words rather than copying the snippet verbatim. "
-        "Only recommend a venue that is not in LOCAL KNOWLEDGE if none of the snippets fit the request. "
+        "RULE 2: Set 'matches_local_knowledge' to the exact name of the LOCAL KNOWLEDGE venue that is "
+        "geographically and thematically relevant to the request (e.g. same cuisine/category and city). "
+        "Only choose 'none' if no listed snippet genuinely fits. When you pick a venue, also set "
+        "'recommendation' to that same name, and phrase 'reasoning' in your own words rather than "
+        "copying the snippet verbatim. "
         "RULE 3: Past activities and preferences are secondary context only. Never let them override what the user explicitly asked for. "
         "CRITICAL INSTRUCTION: For 'location_type', you MUST output exactly the word 'indoor' or exactly the word 'outdoor'. "
         "Do NOT output the city name. Do NOT output anything else."
     )
 
     user_request = state["messages"][-1].content
+    last_request = state.get("last_request", "")
+    is_followup = bool(last_request) and any(cue in user_request.lower() for cue in FOLLOWUP_CUES)
+
     user_prompt = (
         f"User's request: {user_request}\n"
         f"Destination: {state.get('destination')}\nMax Budget: ${state.get('max_budget')}\n"
     )
+
+    if is_followup:
+        user_prompt += (
+            f"\nThis looks like a follow-up to the user's earlier request in this conversation: "
+            f"\"{last_request}\". Unless the new message clearly changes the type of place, cuisine, "
+            f"or category being asked for, keep honoring that earlier request's intent (e.g. if they "
+            f"previously asked for a Japanese restaurant, \"another restaurant\" still means another "
+            f"Japanese restaurant)."
+        )
 
     previous = state.get("current_itinerary", {}).get("recommendation")
     asking_for_nearby = any(word in user_request.lower() for word in ("near", "nearby", "close to", "next to", "around"))
@@ -166,12 +230,21 @@ def draft_itinerary(state: TravelState):
             user_prompt += f"\nPreviously recommended in this conversation: {previous}"
 
     rag_query = f"{user_request} {state.get('destination', '')}"
-    rag_hits = query_knowledge_base(rag_query, n_results=3)
+    if is_followup:
+        rag_query = f"{last_request} {rag_query}"
+
+    # Widen the candidate pool when a previous recommendation exists: the model needs a
+    # genuine alternative to pick from once it excludes the venue it already suggested,
+    # not just a top-3 window that happens to be dominated by that same venue.
+    n_results = 5 if previous else 3
+    rag_hits = query_knowledge_base(rag_query, n_results=n_results)
+    hit_names = []
     if rag_hits:
         print(f"[RAG] Found {len(rag_hits)} relevant local tips.")
         user_prompt += "\n--- LOCAL KNOWLEDGE (use only if geographically relevant to the request) ---"
         for hit in rag_hits:
-            user_prompt += f"\n[{hit['source']} | {hit['location_type']}] {hit['text']}"
+            hit_names.append(hit["name"])
+            user_prompt += f"\n[{hit['name']} | {hit['source']} | {hit['location_type']}] {hit['text']}"
         user_prompt += "\n--- END LOCAL KNOWLEDGE ---\n"
 
     preferences = state.get("user_preferences", {})
@@ -196,11 +269,18 @@ def draft_itinerary(state: TravelState):
         ("system", system_instructions),
         ("user", user_prompt)
     ])
-    
-    chain = prompt | structured_llm
-    result = chain.invoke({}) 
 
-    return {"current_itinerary": result.model_dump()}
+    draft_schema = build_draft_schema(hit_names)
+    chain = prompt | llm.with_structured_output(draft_schema)
+    result = chain.invoke({})
+
+    result_dict = result.model_dump()
+    result_dict.pop("cuisine_category_check", None)
+    matched = result_dict.pop("matches_local_knowledge", "none")
+    if matched != "none":
+        result_dict["recommendation"] = matched
+
+    return {"current_itinerary": result_dict}
 
 def check_environment(state: TravelState):
     print("\n[API Call] Fetching live weather data...")
