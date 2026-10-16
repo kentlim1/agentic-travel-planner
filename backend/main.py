@@ -178,3 +178,8 @@ def fetch_itinerary(key: str):
 @app.get("/api/health")
 def health():
     return {"ok": True}
+
+
+@app.get("/health")
+def health_root():
+    return {"status": "ok"}
