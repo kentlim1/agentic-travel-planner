@@ -61,6 +61,7 @@ if __name__ == "__main__":
             "destination": final_state.get("destination", "Not set"),
             "max_budget": final_state.get("max_budget", 0.0),
             "dates": final_state.get("dates", "Not set"),
+            "last_request": final_state.get("last_request", ""),
             "current_itinerary": final_state.get("current_itinerary", {}),
             "validation_errors": [],
         }

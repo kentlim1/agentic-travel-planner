@@ -35,6 +35,7 @@ class TripCarry(BaseModel):
     destination: Optional[str] = None
     max_budget: float = 0.0
     dates: Optional[str] = None
+    last_request: Optional[str] = None
     current_itinerary: dict = {}
 
 
@@ -94,6 +95,7 @@ async def chat(req: ChatRequest):
             "destination": req.trip.destination or "Not set",
             "max_budget": req.trip.max_budget or 0.0,
             "dates": req.trip.dates or "Not set",
+            "last_request": req.trip.last_request or "",
             "current_itinerary": req.trip.current_itinerary or {},
             "validation_errors": [],
         }
@@ -124,6 +126,7 @@ async def chat(req: ChatRequest):
                         "destination": final_state.get("destination"),
                         "max_budget": final_state.get("max_budget"),
                         "dates": final_state.get("dates"),
+                        "last_request": final_state.get("last_request"),
                         "current_itinerary": _sanitize(final_state.get("current_itinerary") or {}),
                         "weather_forecast": final_state.get("weather_forecast"),
                         "total_estimated_cost": final_state.get("total_estimated_cost"),

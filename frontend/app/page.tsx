@@ -90,6 +90,7 @@ interface TripState {
   destination: string | null;
   max_budget: number;
   dates: string | null;
+  last_request: string | null;
   current_itinerary: Itinerary;
 }
 
@@ -118,6 +119,7 @@ type StreamEvent =
       destination: string | null;
       max_budget: number;
       dates: string | null;
+      last_request: string | null;
       current_itinerary: Itinerary;
       weather_forecast: string | null;
       total_estimated_cost: number | null;
@@ -138,6 +140,7 @@ const INITIAL_TRIP: TripState = {
   destination: null,
   max_budget: 0,
   dates: null,
+  last_request: null,
   current_itinerary: {},
 };
 
@@ -226,6 +229,7 @@ export default function Page() {
             destination: trip.destination && trip.destination !== "Not set" ? trip.destination : null,
             max_budget: trip.max_budget || 0,
             dates: trip.dates && trip.dates !== "Not set" ? trip.dates : null,
+            last_request: trip.last_request || null,
             current_itinerary: trip.current_itinerary || {},
           },
         }),
@@ -296,6 +300,7 @@ export default function Page() {
         destination: evt.destination || null,
         max_budget: evt.max_budget || 0,
         dates: evt.dates || null,
+        last_request: evt.last_request || null,
         current_itinerary: itinerary,
       };
       setTrip(newTrip);

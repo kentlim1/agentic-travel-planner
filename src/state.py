@@ -6,7 +6,8 @@ class TravelState(TypedDict):
     max_budget: float
     destination: str
     dates: str
-    current_itinerary: dict 
+    last_request: str
+    current_itinerary: dict
     weather_forecast: dict
     total_estimated_cost: float
     validation_errors: List[str]
